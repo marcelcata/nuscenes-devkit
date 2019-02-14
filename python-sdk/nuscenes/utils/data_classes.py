@@ -583,3 +583,58 @@ class Box:
                  (int(center_bottom[0]), int(center_bottom[1])),
                  (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
                  colors[0][::-1], linewidth)
+
+    def project_3d_to_2d(self, cam_matrix):
+        def project_to_image(pts_3d, cam_matrix):
+            """Project 3d points to image plane.
+            Usage: pts_2d = projectToImage(pts_3d, P)
+              input: pts_3d: nx3 matrix
+                     P:      3x4 projection matrix
+              output: pts_2d: nx2 matrix
+              P(3x4) dot pts_3d_extended(4xn) = projected_pts_2d(3xn)
+              => normalize projected_pts_2d(2xn)
+              <=> pts_3d_extended(nx4) dot P'(4x3) = projected_pts_2d(nx3)
+                  => normalize projected_pts_2d(nx2)
+            """
+            n = pts_3d.shape[0]
+            pts_3d_extend = np.hstack((pts_3d, np.ones((n, 1))))
+            pts_2d = np.dot(pts_3d_extend, np.transpose(cam_matrix))  # nx3
+            pts_2d[:, 0] /= pts_2d[:, 2]
+            pts_2d[:, 1] /= pts_2d[:, 2]
+            return pts_2d[:, 0:2]
+
+        # project the 3d bounding box into the image plane
+        corners_2d = project_to_image(np.transpose(self.corners()), cam_matrix)
+        return corners_2d
+
+    def get_yaw(self, in_image_frame: bool = True) -> float:
+        """
+        Return the yaw value from the quaternion
+        :param: <boolean>. To indicate if the object is inside the image frame. Default: True.
+        :return: <np.float: 1>. Yaw value.
+        """
+        if in_image_frame:
+            v = np.dot(self.orientation.rotation_matrix, np.array([1, 0, 0]))
+            yaw = -np.arctan2(v[2], v[0])
+        else:
+            v = np.dot(self.orientation.rotation_matrix, np.array([1, 0, 0]))
+            yaw = np.arctan2(v[1], v[0])
+
+        return yaw
+
+    def box_2d(self, intrinsics: np.ndarray) -> np.ndarray:
+        """
+        Return the 2D box that fits the 2D projection of the 3D bounding box
+        :param: intrinsics: <np.float: 3, 3>. The camera matrix.
+        :return: <np.float: 4, 1>. An array formed by xmax, ymax, xmin, ymin for the 2D bounding box.
+        """
+        if intrinsics.shape == (3, 3):
+            cam_matrix = np.zeros((3, 4))
+            cam_matrix[:, :-1] = intrinsics
+        else:
+            cam_matrix = intrinsics
+        corners2d = self.project_3d_to_2d(cam_matrix)
+        print(corners2d)
+        box2d = np.asarray([np.min(corners2d[:, 0]), np.min(corners2d[:, 1]),
+                            np.max(corners2d[:, 0]), np.max(corners2d[:, 1])])
+        return box2d
